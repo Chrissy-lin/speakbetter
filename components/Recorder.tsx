@@ -8,6 +8,26 @@ type RecorderProps = {
   onTranscript: (transcript: string) => void;
 };
 
+type TranscribeResponse = {
+  transcript?: string;
+  error?: string;
+  details?: string;
+};
+
+async function readTranscribeResponse(response: Response): Promise<TranscribeResponse> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    return (await response.json()) as TranscribeResponse;
+  }
+
+  const text = await response.text();
+
+  return {
+    error: text || "Transcription failed."
+  };
+}
+
 export function Recorder({ scenarioId, onTranscript }: RecorderProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -111,16 +131,19 @@ export function Recorder({ scenarioId, onTranscript }: RecorderProps) {
         body: formData
       });
 
-      const data = (await response.json()) as {
-        transcript?: string;
-        error?: string;
-      };
+      const data = await readTranscribeResponse(response);
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Transcription failed.");
+        throw new Error(data.details ?? data.error ?? "Transcription failed.");
       }
 
-      onTranscript(data.transcript ?? "");
+      const transcript = data.transcript?.trim();
+
+      if (!transcript) {
+        throw new Error("No transcript was returned. Please try recording again.");
+      }
+
+      onTranscript(transcript);
     } catch (transcriptionError) {
       const message =
         transcriptionError instanceof Error
